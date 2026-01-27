@@ -10,10 +10,17 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
+# Upgrade pip first for better performance
+RUN pip install --upgrade pip
+
 # Copy requirements
 COPY requirements.txt .
 
-# Install Python dependencies
+# Install CPU-only torch first (much faster than full torch, ~5x smaller)
+# This significantly reduces build time
+RUN pip install --no-cache-dir --user torch --index-url https://download.pytorch.org/whl/cpu
+
+# Install other dependencies (torch is already installed, so it won't reinstall)
 RUN pip install --no-cache-dir --user -r requirements.txt
 
 # Final stage
