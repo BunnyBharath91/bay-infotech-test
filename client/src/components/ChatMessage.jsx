@@ -107,7 +107,7 @@ const SentimentIndicator = styled(Box)(({ theme, sentiment }) => ({
     '#6C757D',
 }));
 
-const ChatMessage = ({ message, isUser = false, source, confidence, sentiment, type, agentName, agentTier, isTyping = false, guardrail }) => {
+const ChatMessage = ({ message, isUser = false, source, confidence, sentiment, type, agentName, agentTier, isTyping = false, guardrail, kbReferences, tier, severity, ticketId, needsEscalation }) => {
   const [displayText, setDisplayText] = React.useState(isTyping ? '' : message);
   
   React.useEffect(() => {
@@ -187,20 +187,115 @@ const ChatMessage = ({ message, isUser = false, source, confidence, sentiment, t
           {type === 'guardrail' && guardrail && (
             <Box sx={{ mt: 1 }}>
               <GuardrailChip
-                label={`Security Guardrail: ${guardrail.category.replace('_', ' ').toUpperCase()}`}
+                label={`Security Guardrail: ${guardrail.category?.replace('_', ' ').toUpperCase() || 'BLOCKED'}`}
                 size="small"
                 icon={<SecurityIcon sx={{ fontSize: 12, color: '#fff' }} />}
               />
             </Box>
           )}
           
-          {/* Source attribution for AI messages */}
-          {!isUser && source && type !== 'guardrail' && (
+          {/* KB References */}
+          {!isUser && kbReferences && kbReferences.length > 0 && (
+            <Box sx={{ mt: 1, mb: 1 }}>
+              <Typography variant="caption" sx={{ color: '#999', fontSize: '10px', display: 'block', mb: 0.5 }}>
+                Knowledge Base References:
+              </Typography>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                {kbReferences.map((ref, idx) => (
+                  <Chip
+                    key={idx}
+                    label={ref.title || ref.id}
+                    size="small"
+                    sx={{
+                      fontSize: '9px',
+                      height: '20px',
+                      backgroundColor: '#4A7C59',
+                      color: '#fff',
+                      '&:hover': {
+                        backgroundColor: '#5A8C69',
+                      },
+                    }}
+                  />
+                ))}
+              </Box>
+            </Box>
+          )}
+          
+          {/* Tier and Severity Badges */}
+          {!isUser && (tier || severity) && (
             <Box sx={{ mt: 1, display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-              <SourceChip
-                label={`Source: ${source}`}
-                size="small"
-              />
+              {tier && (
+                <Chip
+                  label={`Tier: ${tier}`}
+                  size="small"
+                  sx={{
+                    fontSize: '10px',
+                    height: '20px',
+                    backgroundColor: 
+                      tier === 'TIER_0' ? '#28A745' :
+                      tier === 'TIER_1' ? '#17A2B8' :
+                      tier === 'TIER_2' ? '#FFC107' :
+                      tier === 'TIER_3' ? '#DC3545' : '#6C757D',
+                    color: tier === 'TIER_2' ? '#1a1a1a' : '#fff',
+                    fontWeight: 'bold',
+                  }}
+                />
+              )}
+              {severity && (
+                <Chip
+                  label={`Severity: ${severity}`}
+                  size="small"
+                  sx={{
+                    fontSize: '10px',
+                    height: '20px',
+                    backgroundColor: 
+                      severity === 'LOW' ? '#28A745' :
+                      severity === 'MEDIUM' ? '#FFC107' :
+                      severity === 'HIGH' ? '#FF9500' :
+                      severity === 'CRITICAL' ? '#DC3545' : '#6C757D',
+                    color: severity === 'MEDIUM' ? '#1a1a1a' : '#fff',
+                    fontWeight: 'bold',
+                  }}
+                />
+              )}
+              {ticketId && (
+                <Chip
+                  label={`Ticket: ${ticketId}`}
+                  size="small"
+                  sx={{
+                    fontSize: '10px',
+                    height: '20px',
+                    backgroundColor: '#0052CC',
+                    color: '#fff',
+                    fontWeight: 'bold',
+                  }}
+                />
+              )}
+              {needsEscalation && (
+                <Chip
+                  label="⚠️ ESCALATED"
+                  size="small"
+                  sx={{
+                    fontSize: '10px',
+                    height: '20px',
+                    backgroundColor: '#DC3545',
+                    color: '#fff',
+                    fontWeight: 'bold',
+                  }}
+                />
+              )}
+            </Box>
+          )}
+          
+          {/* Source attribution for AI messages */}
+          {!isUser && (source || confidence) && type !== 'guardrail' && (
+            <Box sx={{ mt: 1, display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+              {source && (
+                <SourceChip
+                  label={`Source: ${source}`}
+                  size="small"
+                />
+              )}
               {confidence && (
                 <ConfidenceChip
                   label={`${Math.round(confidence * 100)}% confidence`}

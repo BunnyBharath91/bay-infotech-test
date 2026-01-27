@@ -19,7 +19,7 @@ import ChatIcon from '@mui/icons-material/Chat';
 import { styled } from '@mui/material/styles';
 import ChatMessage from './ChatMessage';
 import ChatInput from './ChatInput';
-import { generateResponse, simulateTypingDelay, shouldCreateTicket, generateTicketData } from '../utils/aiSimulatorSimple';
+import { sendChatMessage } from '../api/chatApi';
 
 const ChatPanel = styled(Paper)(({ theme }) => ({
   position: 'fixed',
@@ -105,7 +105,7 @@ const TypingIndicator = styled(Box)(({ theme }) => ({
   width: 'fit-content',
 }));
 
-const AIChatPanel = ({ isOpen, onClose, onTicketCreated, initialMessage = null }) => {
+const AIChatPanel = ({ isOpen, onClose, onTicketCreated, initialMessage = null, userRole = 'trainee' }) => {
   const [messages, setMessages] = useState([]);
   const [isTyping, setIsTyping] = useState(false);
   const [typingMessage, setTypingMessage] = useState('Understanding request...');
@@ -113,6 +113,8 @@ const AIChatPanel = ({ isOpen, onClose, onTicketCreated, initialMessage = null }
   const [escalationStatus, setEscalationStatus] = useState(null);
   const [isAgentActive, setIsAgentActive] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const [sessionId] = useState(() => `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
+  const [error, setError] = useState(null);
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
   const typingIntervalRef = useRef(null);
@@ -178,6 +180,9 @@ const AIChatPanel = ({ isOpen, onClose, onTicketCreated, initialMessage = null }
   };
 
   const handleSendMessage = useCallback(async (userMessage) => {
+    // Clear any previous errors
+    setError(null);
+
     // Add user message
     const userMsg = {
       id: Date.now(),
@@ -187,170 +192,7 @@ const AIChatPanel = ({ isOpen, onClose, onTicketCreated, initialMessage = null }
     };
     setMessages(prev => [...prev, userMsg]);
 
-    const updatedHistory = [...messages, userMsg];
-    
-    // Check if we're waiting for ticket details
-    if (conversationContext.waitingForTicketDetails) {
-      // User provided ticket details - AI Agent creates ticket autonomously with cool animation
-      const ticketData = generateTicketData(updatedHistory, userMessage);
-      ticketData.description = userMessage; // Use detailed message
-      ticketData.subject = `Lab Crash - ${userMessage.substring(0, 50)}...`;
-      
-      setIsTyping(true);
-      
-      // Show analyzing
-      const analyzingMsg = {
-        id: Date.now() + 0.1,
-        type: 'ai',
-        content: '🔍 Analyzing request...',
-        timestamp: new Date(),
-        isAnalyzing: true,
-      };
-      setMessages(prev => [...prev, analyzingMsg]);
-      
-      await new Promise(resolve => setTimeout(resolve, 800));
-      setMessages(prev => prev.filter(msg => !msg.isAnalyzing));
-      
-      // Show AI Agent processing ticket creation with cool animation
-      const processingMsg = {
-        id: Date.now() + 0.2,
-        type: 'ai',
-        content: '🤖 **AI Agent Processing Ticket Creation...**\n\n📋 Analyzing details...\n🔍 Classifying priority...\n📝 Generating ticket...',
-        timestamp: new Date(),
-        isProcessing: true,
-      };
-      setMessages(prev => [...prev, processingMsg]);
-      
-      // Show processing message for 3 seconds (user can see it)
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      
-      // Keep processing message but mark it as done
-      setMessages(prev => prev.map(msg => 
-        msg.id === processingMsg.id ? { ...msg, isProcessing: false } : msg
-      ));
-      
-      // Show ticket created with typing effect
-      const ticketMsg = {
-        id: Date.now() + 1,
-        type: 'ai',
-        content: `✅ **Support ticket ${ticketData.id} has been created successfully!**\n\n**Ticket Details:**\n- **ID:** ${ticketData.id}\n- **Priority:** ${ticketData.priority}\n- **Status:** ${ticketData.status}\n- **Description:** ${userMessage.substring(0, 100)}${userMessage.length > 100 ? '...' : ''}\n\n**View Ticket:** [Open Ticket ${ticketData.id}](#ticket-${ticketData.id})\n\nOur support team will review your ticket and get back to you within 2 hours.`,
-        timestamp: new Date(),
-        sentiment: { sentiment: 'neutral', score: 0 },
-        confidence: 0.95,
-        ticketId: ticketData.id,
-        ticketData: ticketData,
-        isTyping: true,
-      };
-      
-      setMessages(prev => [...prev, ticketMsg]);
-      
-      // Trigger ticket creation callback
-      if (onTicketCreated) {
-        onTicketCreated(ticketData);
-      }
-      
-      // Simulate typing effect
-      await new Promise(resolve => setTimeout(resolve, Math.min(ticketMsg.content.length * 20, 2000)));
-      
-      setMessages(prev => prev.map(msg => 
-        msg.id === ticketMsg.id ? { ...msg, isTyping: false } : msg
-      ));
-      
-      setIsTyping(false);
-      
-      // Update context - ticket created, ready for escalation
-      setConversationContext(prev => ({
-        ...prev,
-        waitingForTicketDetails: false,
-        ticketCreated: true,
-        lastTicketId: ticketData.id,
-      }));
-      
-      return;
-    }
-
-    // Check for escalation after ticket creation (only if ticket was created)
-    if (conversationContext.ticketCreated) {
-      const lowerMessage = userMessage.toLowerCase();
-      const escalationKeywords = ['urgent', 'now', 'asap', 'immediately', 'need help now', 'emergency', 'i need help now! this is urgent!'];
-      const isEscalation = escalationKeywords.some(keyword => lowerMessage.includes(keyword.toLowerCase()));
-      
-      if (isEscalation) {
-        setIsTyping(true);
-        
-        // Show analyzing
-        const analyzingMsg = {
-          id: Date.now() + 0.1,
-          type: 'ai',
-          content: '🔍 Analyzing escalation request...',
-          timestamp: new Date(),
-          isAnalyzing: true,
-        };
-        setMessages(prev => [...prev, analyzingMsg]);
-        
-        await new Promise(resolve => setTimeout(resolve, 800));
-        setMessages(prev => prev.filter(msg => !msg.isAnalyzing));
-        
-        // Show AI message about connecting to human agent
-        const aiEscalationMsg = {
-          id: Date.now() + 0.2,
-          type: 'ai',
-          content: 'I understand this is urgent. Let me connect you with a live human agent immediately.',
-          timestamp: new Date(),
-          isTyping: true,
-        };
-        setMessages(prev => [...prev, aiEscalationMsg]);
-        
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        setMessages(prev => prev.map(msg => 
-          msg.id === aiEscalationMsg.id ? { ...msg, isTyping: false } : msg
-        ));
-        
-        // Show finding agent animation
-        setEscalationStatus({
-          message: '🔍 Finding available agent...',
-          status: 'searching',
-        });
-        
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        
-        setEscalationStatus({
-          message: '📞 Connecting to live agent...',
-          status: 'connecting',
-        });
-        
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        
-        setEscalationStatus({
-          message: 'Agent will message you when online',
-          status: 'pending',
-        });
-        
-        // After 3 seconds, show Sarah (Tier 2) message
-        setTimeout(() => {
-          const agentMsg = {
-            id: Date.now() + 2,
-            type: 'agent',
-            content: `Hi! I'm Sarah from Tier 2 Support. I can see you have ticket ${conversationContext.lastTicketId || 'INC-XXXX'} and need urgent assistance. I'm here to help you right away. Can you tell me more about what's happening?`,
-            timestamp: new Date(),
-            agentName: 'Sarah',
-            agentTier: 'Tier 2',
-          };
-          
-          setIsTyping(false);
-          setMessages(prev => [...prev, agentMsg]);
-          setEscalationStatus({
-            message: 'Live agent active - Sarah (Tier 2)',
-            status: 'active',
-          });
-          setIsAgentActive(true);
-        }, 3000);
-        
-        return;
-      }
-    }
-
-    // Generate AI response
+    // Show typing indicator
     setIsTyping(true);
     
     // Show analyzing message
@@ -362,130 +204,143 @@ const AIChatPanel = ({ isOpen, onClose, onTicketCreated, initialMessage = null }
       isAnalyzing: true,
     };
     setMessages(prev => [...prev, analyzingMsg]);
-    
-    await new Promise(resolve => setTimeout(resolve, 800));
-    
-    // Remove analyzing message
-    setMessages(prev => prev.filter(msg => !msg.isAnalyzing));
-    
-    await new Promise(resolve => setTimeout(resolve, simulateTypingDelay(userMessage.length)));
 
-    const aiResponse = generateResponse(userMessage, conversationContext);
-    
-    // Handle escalation
-    if (aiResponse.type === 'escalation') {
-      setEscalationStatus({
-        message: 'Connecting to live agent...',
-        status: 'escalating',
-      });
-      
-      // Simulate escalation progression
-      setTimeout(() => {
-        setEscalationStatus({
-          message: 'Agent connected: Sarah from Tier 1 Support',
-          status: 'connected',
-        });
-        
-        // Create escalation ticket automatically
-        const escalationTicket = generateTicketData([...messages, userMsg], userMessage);
-        escalationTicket.priority = 'High';
-        escalationTicket.escalated = true;
-        escalationTicket.escalationReason = 'High sentiment detected';
-        
-        setTimeout(() => {
-          if (onTicketCreated) {
-            onTicketCreated(escalationTicket);
-          }
-          
-          // Add agent message (Sarah - Tier 2)
-          const agentMsg = {
-            id: Date.now() + 2,
-            type: 'agent',
-            content: `Hi! I'm Sarah from Tier 2 Support. I can see you're experiencing ${userMessage.toLowerCase().includes('urgent') ? 'an urgent issue' : 'some frustration'}. I've created ticket ${escalationTicket.id} and I'm here to help you right away. Can you tell me more about what's happening?`,
-            timestamp: new Date(),
-            agentName: 'Sarah',
-            agentTier: 'Tier 2',
-          };
-          
-          setIsTyping(false);
-          setMessages(prev => [...prev, agentMsg]);
-          setEscalationStatus({
-            message: `Live agent active - Ticket ${escalationTicket.id} created`,
-            status: 'active',
-          });
-        }, 2000);
-      }, 1500);
-      
-      // Don't add AI response for escalation, agent will respond
-      setIsTyping(false);
-      return;
-    }
+    try {
+      // Call real backend API
+      const response = await sendChatMessage(
+        sessionId,
+        userMessage,
+        userRole,
+        {
+          module: conversationContext.module || 'general',
+          channel: 'self-service-portal',
+        }
+      );
 
-    // Handle ticket details request
-    if (aiResponse.type === 'ticket_details_request') {
-      setConversationContext(prev => ({
-        ...prev,
-        waitingForTicketDetails: true,
-        activeScriptId: aiResponse.context?.activeScriptId,
-        currentStepIndex: aiResponse.context?.currentStepIndex,
-        unresolvedAttempts: aiResponse.context?.unresolvedAttempts || 0,
-      }));
-    }
+      // Remove analyzing message
+      setMessages(prev => prev.filter(msg => !msg.isAnalyzing));
 
-    // Update conversation context (script-based)
-    if (aiResponse.context) {
-      setConversationContext(prev => {
-        return {
-          ...prev,
-          activeScriptId: aiResponse.context.activeScriptId !== undefined 
-            ? aiResponse.context.activeScriptId 
-            : prev.activeScriptId,
-          currentStepIndex: aiResponse.context.currentStepIndex !== undefined
-            ? aiResponse.context.currentStepIndex
-            : prev.currentStepIndex,
-          unresolvedAttempts: aiResponse.context.unresolvedAttempts !== undefined
-            ? aiResponse.context.unresolvedAttempts
-            : prev.unresolvedAttempts || 0,
-          lastTicketId: aiResponse.context.lastTicketId || prev.lastTicketId,
+      // Handle guardrail block
+      if (response.guardrail?.blocked) {
+        const guardrailMsg = {
+          id: Date.now() + 1,
+          type: 'ai',
+          content: response.answer,
+          timestamp: new Date(),
+          messageType: 'guardrail',
+          guardrail: response.guardrail,
+          confidence: response.confidence || 1.0,
+          isTyping: false,
         };
-      });
-    } else if (aiResponse.type === 'answer' && !aiResponse.options) {
-      // No context provided - clear script state if response type indicates end
+        
+        setIsTyping(false);
+        setMessages(prev => [...prev, guardrailMsg]);
+        return;
+      }
+
+      // Handle escalation
+      if (response.needsEscalation) {
+        setEscalationStatus({
+          message: '🔍 Escalation required - connecting to support team...',
+          status: 'escalating',
+        });
+
+        // Show escalation message
+        const escalationMsg = {
+          id: Date.now() + 1,
+          type: 'ai',
+          content: response.answer,
+          timestamp: new Date(),
+          tier: response.tier,
+          severity: response.severity,
+          needsEscalation: true,
+          kbReferences: response.kbReferences,
+          confidence: response.confidence,
+          ticketId: response.ticketId,
+          isTyping: false,
+        };
+        
+        setMessages(prev => [...prev, escalationMsg]);
+        
+        // Update escalation status
+        setTimeout(() => {
+          setEscalationStatus({
+            message: `Ticket ${response.ticketId || 'created'} - ${response.tier} support will assist you`,
+            status: 'escalated',
+          });
+        }, 1500);
+
+        // Trigger ticket creation callback if ticket was created
+        if (response.ticketId && onTicketCreated) {
+          onTicketCreated({
+            id: response.ticketId,
+            tier: response.tier,
+            severity: response.severity,
+            subject: userMessage.substring(0, 100),
+            description: userMessage,
+            status: 'Open',
+            priority: response.severity,
+          });
+        }
+
+        setIsTyping(false);
+        return;
+      }
+
+      // Normal response - add AI message
+      const aiMsg = {
+        id: Date.now() + 1,
+        type: 'ai',
+        content: response.answer,
+        timestamp: new Date(),
+        confidence: response.confidence,
+        kbReferences: response.kbReferences,
+        tier: response.tier,
+        severity: response.severity,
+        ticketId: response.ticketId,
+        isTyping: true,
+      };
+
+      setIsTyping(false);
+      setMessages(prev => [...prev, aiMsg]);
+      
+      // Simulate typing effect for AI response
+      await new Promise(resolve => setTimeout(resolve, Math.min(response.answer.length * 15, 2000)));
+      
+      // Mark typing as complete
+      setMessages(prev => prev.map(msg => 
+        msg.id === aiMsg.id ? { ...msg, isTyping: false } : msg
+      ));
+
+      // Update conversation context
       setConversationContext(prev => ({
         ...prev,
-        activeScriptId: null,
-        currentStepIndex: null,
-        unresolvedAttempts: prev.unresolvedAttempts || 0,
+        lastTier: response.tier,
+        lastSeverity: response.severity,
+        lastTicketId: response.ticketId,
       }));
+
+    } catch (error) {
+      console.error('Error sending message:', error);
+      
+      // Remove analyzing message
+      setMessages(prev => prev.filter(msg => !msg.isAnalyzing));
+      
+      // Show error message
+      const errorMsg = {
+        id: Date.now() + 1,
+        type: 'ai',
+        content: `I apologize, but I'm having trouble connecting to the support system. Please try again in a moment. If the issue persists, please contact support directly.\n\n**Error:** ${error.message}`,
+        timestamp: new Date(),
+        messageType: 'error',
+        isTyping: false,
+      };
+      
+      setMessages(prev => [...prev, errorMsg]);
+      setIsTyping(false);
+      setError(error.message);
     }
-
-    // Add AI message with typing effect
-    const aiMsg = {
-      id: Date.now() + 1,
-      type: 'ai',
-      content: aiResponse.message,
-      timestamp: new Date(),
-      sentiment: aiResponse.sentiment,
-      confidence: aiResponse.confidence,
-      source: aiResponse.source,
-      sourceName: aiResponse.sourceName,
-      messageType: aiResponse.type,
-      options: aiResponse.options,
-      guardrail: aiResponse.guardrail,
-      isTyping: true,
-    };
-
-    setIsTyping(false);
-    setMessages(prev => [...prev, aiMsg]);
-    
-    // Simulate typing effect for AI response
-    await new Promise(resolve => setTimeout(resolve, Math.min(aiResponse.message.length * 20, 2000)));
-    
-    // Mark typing as complete
-    setMessages(prev => prev.map(msg => 
-      msg.id === aiMsg.id ? { ...msg, isTyping: false } : msg
-    ));
-  }, [messages, conversationContext, onTicketCreated]);
+  }, [sessionId, userRole, conversationContext, onTicketCreated]);
 
   // Handle initial message and auto-expand when message is provided
   useEffect(() => {
@@ -658,11 +513,16 @@ const AIChatPanel = ({ isOpen, onClose, onTicketCreated, initialMessage = null }
                 source={msg.source}
                 confidence={msg.confidence}
                 sentiment={msg.sentiment}
-                type={msg.messageType === 'disambiguation' ? { options: msg.options, onOptionClick: handleOptionClick } : msg.messageType === 'guardrail' ? 'guardrail' : null}
+                type={msg.messageType === 'disambiguation' ? { options: msg.options, onOptionClick: handleOptionClick } : msg.messageType === 'guardrail' ? 'guardrail' : msg.messageType === 'error' ? 'error' : null}
                 agentName={msg.agentName}
                 agentTier={msg.agentTier}
                 isTyping={msg.isTyping}
                 guardrail={msg.guardrail}
+                kbReferences={msg.kbReferences}
+                tier={msg.tier}
+                severity={msg.severity}
+                ticketId={msg.ticketId}
+                needsEscalation={msg.needsEscalation}
               />
             );
           })}
