@@ -22,6 +22,39 @@ async def lifespan(app: FastAPI):
     # Startup
     setup_logging()
     await init_db()
+    
+    # Auto-initialize database if empty (only on first startup)
+    try:
+        from sqlalchemy import text, inspect
+        from app.db.connection import get_engine
+        import app.db.connection as db_conn
+        
+        engine = get_engine()
+        if engine and db_conn.async_session_maker:
+            # Check if database is empty
+            async with db_conn.async_session_maker() as session:
+                result = await session.execute(
+                    text("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public'")
+                )
+                table_count = result.scalar()
+                
+                if table_count == 0:
+                    logger.info("Database is empty, auto-initializing...")
+                    # Import here to avoid circular imports
+                    from app.db.models import Base
+                    
+                    conn = await session.connection()
+                    await conn.run_sync(Base.metadata.create_all)
+                    
+                    db_url = str(engine.url)
+                    if 'postgresql' in db_url:
+                        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+                    
+                    await session.commit()
+                    logger.info("Database tables created. Run /admin/ingest-kb to load knowledge base.")
+    except Exception as e:
+        logger.warning(f"Auto-initialization check failed (this is OK if DB already exists): {e}")
+    
     yield
     # Shutdown
     await close_db()
