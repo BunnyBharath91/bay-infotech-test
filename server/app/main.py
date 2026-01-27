@@ -96,33 +96,42 @@ async def _init_database():
     if db_conn.async_session_maker is None:
         raise RuntimeError("Database session maker not initialized")
     
-    # Use session maker to get a connection and execute DDL
-    # This reuses the existing connection pool that works at startup
+    # Drop tables in separate transaction
     async with db_conn.async_session_maker() as session:
         try:
-            # Get the underlying connection
             conn = await session.connection()
-            
             logger.info("Dropping all tables...")
             await conn.run_sync(Base.metadata.drop_all)
-            
-            # Enable pgvector for PostgreSQL (optional - will use JSON if not available)
-            db_url = str(engine.url)
-            if 'postgresql' in db_url:
-                try:
-                    logger.info("Attempting to enable pgvector extension...")
-                    await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-                    logger.info("pgvector extension enabled successfully")
-                except Exception as e:
-                    logger.warning(f"pgvector extension not available (will use JSON storage): {e}")
-            
+            await session.commit()
+        except Exception as e:
+            logger.error(f"Error dropping tables: {e}")
+            await session.rollback()
+            raise
+    
+    # Enable pgvector extension in separate transaction (optional)
+    db_url = str(engine.url)
+    if 'postgresql' in db_url:
+        async with db_conn.async_session_maker() as session:
+            try:
+                conn = await session.connection()
+                logger.info("Attempting to enable pgvector extension...")
+                await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+                await session.commit()
+                logger.info("pgvector extension enabled successfully")
+            except Exception as e:
+                logger.warning(f"pgvector extension not available (will use JSON storage): {e}")
+                await session.rollback()
+    
+    # Create tables in separate transaction
+    async with db_conn.async_session_maker() as session:
+        try:
+            conn = await session.connection()
             logger.info("Creating all tables...")
             await conn.run_sync(Base.metadata.create_all)
-            
             await session.commit()
             logger.info("Database initialization completed successfully")
         except Exception as e:
-            logger.error(f"Database initialization error: {e}", exc_info=True)
+            logger.error(f"Error creating tables: {e}")
             await session.rollback()
             raise
     
