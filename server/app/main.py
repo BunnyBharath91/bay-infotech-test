@@ -85,6 +85,7 @@ async def _init_database():
     """Internal function to initialize database."""
     from sqlalchemy import text
     from app.db.connection import get_engine
+    import app.db.connection as db_conn
     from app.db.models import Base
     
     engine = get_engine()
@@ -92,18 +93,34 @@ async def _init_database():
         await init_db()
         engine = get_engine()
     
-    async with engine.begin() as conn:
-        logger.info("Dropping all tables...")
-        await conn.run_sync(Base.metadata.drop_all)
-        
-        # Enable pgvector for PostgreSQL
-        db_url = str(engine.url)
-        if 'postgresql' in db_url:
-            logger.info("Enabling pgvector extension...")
-            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-        
-        logger.info("Creating all tables...")
-        await conn.run_sync(Base.metadata.create_all)
+    if db_conn.async_session_maker is None:
+        raise RuntimeError("Database session maker not initialized")
+    
+    # Use session maker to get a connection and execute DDL
+    # This reuses the existing connection pool that works at startup
+    async with db_conn.async_session_maker() as session:
+        try:
+            # Get the underlying connection
+            conn = await session.connection()
+            
+            logger.info("Dropping all tables...")
+            await conn.run_sync(Base.metadata.drop_all)
+            
+            # Enable pgvector for PostgreSQL
+            db_url = str(engine.url)
+            if 'postgresql' in db_url:
+                logger.info("Enabling pgvector extension...")
+                await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+            
+            logger.info("Creating all tables...")
+            await conn.run_sync(Base.metadata.create_all)
+            
+            await session.commit()
+            logger.info("Database initialization completed successfully")
+        except Exception as e:
+            logger.error(f"Database initialization error: {e}", exc_info=True)
+            await session.rollback()
+            raise
     
     return {"status": "success", "message": "Database initialized successfully"}
 
