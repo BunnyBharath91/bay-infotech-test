@@ -25,10 +25,28 @@ async def init_db():
     
     settings = get_settings()
     
-    # Simple engine creation without extras
+    # Prefer public URL if available (works better with Railway)
+    # Convert postgresql:// to postgresql+asyncpg:// for asyncpg driver
+    db_url = settings.DATABASE_PUBLIC_URL or settings.DATABASE_URL
+    if db_url.startswith("postgresql://"):
+        db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    elif not db_url.startswith("postgresql+asyncpg://"):
+        # If it's already postgresql+asyncpg:// or sqlite, use as-is
+        pass
+    
+    logger.info(f"Using database URL: {db_url.split('@')[1] if '@' in db_url else 'local'}")
+    
+    # Configure connection pool for Railway
+    # pool_pre_ping: Test connections before using (handles DNS resolution issues)
+    # pool_size: Keep connections alive
+    # max_overflow: Allow extra connections when needed
     engine = create_async_engine(
-        settings.DATABASE_URL,
+        db_url,
         echo=settings.DEBUG,
+        pool_pre_ping=True,  # Test connections before using them
+        pool_size=5,  # Keep 5 connections alive
+        max_overflow=10,  # Allow up to 10 extra connections
+        pool_recycle=3600,  # Recycle connections after 1 hour
     )
     
     async_session_maker = async_sessionmaker(
@@ -36,6 +54,17 @@ async def init_db():
         class_=AsyncSession,
         expire_on_commit=False
     )
+    
+    # Warm up the connection pool by making a test query
+    # This helps establish the connection in Railway's network context
+    try:
+        async with async_session_maker() as session:
+            from sqlalchemy import text
+            await session.execute(text("SELECT 1"))
+            await session.commit()
+        logger.info("Connection pool warmed up successfully")
+    except Exception as e:
+        logger.warning(f"Connection pool warm-up failed (may still work): {e}")
     
     logger.info("Database connection initialized")
 

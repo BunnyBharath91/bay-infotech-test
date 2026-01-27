@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     
     # Database
     DATABASE_URL: str
+    DATABASE_PUBLIC_URL: Optional[str] = None  # Railway public URL (preferred if available)
     DB_POOL_SIZE: int = 10
     DB_MAX_OVERFLOW: int = 20
     
