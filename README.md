@@ -24,7 +24,7 @@ This is a **working proof-of-concept** built for BayInfotech's technical challen
 
 - **Frontend (Vercel):** https://bay-infotech-bharath-kumar-borra.vercel.app
 - **Backend API (Render):** https://bay-infotech-test-production.up.railway.app
-- **Demo Video:** [Coming Soon - Add Loom/YouTube link]
+- **Demo Video:** https://res.cloudinary.com/ddu6auvs3/video/upload/v1769606272/Bharath_Kumar_Borra_s_Video_-_Jan_28_2026_ifikeg.mp4
 
 ---
 
