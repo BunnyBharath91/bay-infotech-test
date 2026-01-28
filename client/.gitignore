@@ -25,3 +25,8 @@ build/
 # Logs
 logs/
 *.log
+
+# Vercel
+.vercel/
+
+.vercel
