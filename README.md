@@ -45,21 +45,24 @@ All required documentation is included:
 ### **Tech Stack**
 
 **Frontend:**
+
 - React 18 + Vite
 - Material-UI (MUI) with custom PCTE theme
 - Real-time chat interface with typing indicators
 - Role-based access control
 
 **Backend:**
+
 - FastAPI (Python 3.11+)
 - PostgreSQL + pgvector for production (SQLite for local dev)
 - Sentence Transformers for embeddings
 - Google Gemini for LLM (swappable provider architecture)
 
 **Infrastructure:**
+
 - Docker + Docker Compose
 - Vercel (Frontend hosting)
-- Render (Backend + PostgreSQL)
+- Railway (Backend + PostgreSQL)
 
 ### **Core Components**
 
@@ -91,42 +94,60 @@ All required documentation is included:
 - Node.js 18+
 - PostgreSQL 15+ with pgvector extension (or use SQLite for quick start)
 
-### **Quick Start (SQLite)**
+### **Quick Start (SQLite for Local Dev)**
 
 1. **Clone the repository:**
+
    ```bash
    git clone <your-repo-url>
    cd bay-infotech-test
    ```
 
-2. **Backend Setup:**
+2. **Backend Setup (SQLite, Python 3.11):**
+
    ```bash
    cd server
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+   # Create a Python 3.11 virtualenv
+   # On Windows (recommended):
+   py -3.11 -m venv venv
+   # On macOS / Linux:
+   # python3.11 -m venv venv
+
+   # Activate the virtualenv
+   source venv/bin/activate      # On Windows (PowerShell/cmd): venv\Scripts\activate
+
+   # Install backend dependencies
    pip install -r requirements.txt
-   
+
    # Copy environment file and configure
    cp .env.example .env
-   # Edit .env and add your Gemini API key
-   
-   # Initialize database and ingest KB
+
+   # Local development uses SQLite by default:
+   #   DATABASE_URL=sqlite+aiosqlite:///./helpdesk.db
+   # LLM is optional; you can leave USE_LLM=false / LLM_PROVIDER=mock
+
+   # Initialize SQLite database and ingest KB
    python full_reset.py
    python simple_ingest.py
-   
-   # Start server
-   uvicorn app.main:app --reload
+
+   # Start server on port 8000 (SQLite-backed)
+   uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
    ```
 
-3. **Frontend Setup:**
+3. **Frontend Setup (React + Vite):**
+
    ```bash
    cd client
    npm install
-   
-   # Copy environment file
-   cp .env.example .env
-   # Ensure VITE_API_BASE_URL=http://localhost:8000
-   
+
+   # Copy environment file (if present) or create .env
+   cp .env.example .env  # if this file exists
+
+   # Point the frontend at the local backend (SQLite)
+   # in client/.env:
+   # VITE_API_BASE_URL=http://localhost:8000
+
    # Start frontend
    npm run dev
    ```
@@ -148,6 +169,7 @@ pytest tests/ -v --cov=app --cov-report=html
 ```
 
 **Test Coverage:**
+
 - ✅ Unit tests for guardrails, tiering, severity classification
 - ✅ Integration tests for RAG retrieval
 - ✅ End-to-end tests for chat workflows
@@ -170,6 +192,7 @@ See [TESTING.md](./TESTING.md) for comprehensive test scenarios including:
 ### **Option 1: Deploy to Vercel + Render (Recommended)**
 
 **Frontend on Vercel:**
+
 ```bash
 cd client
 vercel --prod
@@ -177,6 +200,7 @@ vercel --prod
 ```
 
 **Backend on Render:**
+
 1. Connect your GitHub repo to Render
 2. Create a new Web Service using `server/render.yaml`
 3. Add environment variables (especially `LLM_API_KEY`)
@@ -192,6 +216,7 @@ docker-compose up -d
 ```
 
 This starts:
+
 - Backend API on port 8000
 - PostgreSQL with pgvector on port 5432
 
@@ -206,6 +231,7 @@ Then deploy frontend separately to Vercel/Netlify.
 **User:** "I keep getting redirected to the login page even after logging in."
 
 **System Response:**
+
 - ✅ KB-grounded troubleshooting (clear cookies for `*.cyberlab.local`)
 - ✅ Tier: TIER_2 (Support Engineer)
 - ✅ Severity: MEDIUM
@@ -217,6 +243,7 @@ Then deploy frontend separately to Vercel/Netlify.
 **User:** "How do I access the host machine behind my VM?"
 
 **System Response:**
+
 - 🚫 **BLOCKED by guardrails**
 - 🚫 "Access to host machines or hypervisors is not permitted"
 - 🚫 Request logged for security review
@@ -227,6 +254,7 @@ Then deploy frontend separately to Vercel/Netlify.
 **User:** "My lab VM froze and shut down; I lost my work."
 
 **System Response:**
+
 - ✅ KB-based recovery steps (snapshot restoration)
 - ✅ Tier: TIER_3 (Platform Engineering)
 - ✅ Severity: CRITICAL
@@ -238,30 +266,35 @@ Then deploy frontend separately to Vercel/Netlify.
 ## 🔑 Key Features Implemented
 
 ### **1. RAG (Retrieval-Augmented Generation)**
+
 - Semantic search using sentence-transformers
 - Vector similarity with cosine distance
 - Context-aware chunk retrieval
 - Version and role-based KB filtering
 
 ### **2. Guardrails**
+
 - Content filtering for unsafe requests
 - Policy enforcement (no host access, no logging disablement)
 - Privilege escalation detection
 - Adversarial prompt protection
 
 ### **3. Intelligent Tiering**
+
 - TIER_0: Self-service (AI only)
 - TIER_1: Human generalist support
 - TIER_2: Support engineers (complex technical issues)
 - TIER_3: Platform engineering (kernel panics, systemic outages)
 
 ### **4. Escalation Logic**
+
 - Automatic ticket creation when needed
 - Severity-based routing (LOW, MEDIUM, HIGH, CRITICAL)
 - Conversation context preservation
 - SLA time tracking
 
 ### **5. Analytics & Metrics**
+
 - Deflection rate tracking
 - Tickets by tier and severity
 - Guardrail activation monitoring
@@ -274,14 +307,14 @@ Then deploy frontend separately to Vercel/Netlify.
 
 ### **Core Endpoints**
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/chat` | POST | Send message, get AI response with tier/escalation |
-| `/api/tickets` | GET | List all tickets with pagination |
-| `/api/tickets/{id}` | GET | Get specific ticket details |
-| `/api/metrics/summary` | GET | Overall metrics dashboard |
-| `/api/metrics/trends` | GET | Time-series metrics data |
-| `/health` | GET | Health check endpoint |
+| Endpoint               | Method | Description                                        |
+| ---------------------- | ------ | -------------------------------------------------- |
+| `/api/chat`            | POST   | Send message, get AI response with tier/escalation |
+| `/api/tickets`         | GET    | List all tickets with pagination                   |
+| `/api/tickets/{id}`    | GET    | Get specific ticket details                        |
+| `/api/metrics/summary` | GET    | Overall metrics dashboard                          |
+| `/api/metrics/trends`  | GET    | Time-series metrics data                           |
+| `/health`              | GET    | Health check endpoint                              |
 
 **Full API documentation:** See [API.md](./API.md) or visit `/docs` on your backend URL.
 
@@ -316,46 +349,14 @@ Then deploy frontend separately to Vercel/Netlify.
 
 ## 📝 Evaluation Criteria Coverage
 
-| Criteria | Status | Evidence |
-|----------|--------|----------|
-| Deterministic Accuracy | ✅ | All answers KB-grounded, no hallucinations |
-| 12 Core Workflows | ✅ | Tested: login loops, VM crashes, guardrails, etc. |
-| Clarifying Logic | ✅ | System asks for module/env when needed |
-| Analytics & Logging | ✅ | Metrics endpoints + event tracking |
-| Guardrails & Security | ✅ | Blocks unsafe requests, logs violations |
-| Deployment & URLs | ✅ | Vercel + Render configs ready |
-| Documentation | ✅ | All 5 required docs included |
+| Criteria               | Status | Evidence                                          |
+| ---------------------- | ------ | ------------------------------------------------- |
+| Deterministic Accuracy | ✅     | All answers KB-grounded, no hallucinations        |
+| 12 Core Workflows      | ✅     | Tested: login loops, VM crashes, guardrails, etc. |
+| Clarifying Logic       | ✅     | System asks for module/env when needed            |
+| Analytics & Logging    | ✅     | Metrics endpoints + event tracking                |
+| Guardrails & Security  | ✅     | Blocks unsafe requests, logs violations           |
+| Deployment & URLs      | ✅     | Vercel + Render configs ready                     |
+| Documentation          | ✅     | All 5 required docs included                      |
 
 ---
-
-## 🤝 Contributing
-
-This is a technical challenge submission. For improvements or questions, please contact via the submission channel.
-
----
-
-## 📄 License
-
-This project is a technical challenge submission for BayInfotech. All rights reserved.
-
----
-
-## 👤 Author
-
-**Your Name**
-- GitHub: [your-github]
-- Email: [your-email]
-- Demo Video: [link-to-loom-or-youtube]
-
----
-
-## 🙏 Acknowledgments
-
-- BayInfotech for the detailed technical challenge
-- FastAPI and React communities for excellent frameworks
-- Sentence Transformers for open-source embeddings
-- Google Gemini for LLM capabilities
-
----
-
-**Built with ❤️ for BayInfotech's AI Platform Team**
