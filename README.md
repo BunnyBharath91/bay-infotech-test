@@ -22,8 +22,8 @@ This is a **working proof-of-concept** built for BayInfotech's technical challen
 
 ## 🚀 Live Demo
 
-- **Frontend (Vercel):** [Coming Soon - Add after deployment]
-- **Backend API (Render):** [Coming Soon - Add after deployment]
+- **Frontend (Vercel):** https://bay-infotech-bharath-kumar-borra.vercel.app
+- **Backend API (Render):** https://bay-infotech-test-production.up.railway.app
 - **Demo Video:** [Coming Soon - Add Loom/YouTube link]
 
 ---

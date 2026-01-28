@@ -11,10 +11,16 @@ from datetime import datetime, timedelta
 import uuid
 
 from app.db.models import (
-    Conversation, Message, Ticket, GuardrailEvent, 
-    AnalyticsEvent, KBDocument, KBChunk
+    Conversation,
+    Message,
+    Ticket,
+    GuardrailEvent,
+    AnalyticsEvent,
+    KBDocument,
+    KBChunk,
 )
 from app.schemas.chat import Tier, Severity
+import math
 
 
 class ConversationRepository:
@@ -295,7 +301,12 @@ class KBRepository:
         query_embedding: List[float],
         top_k: int = 5
     ) -> List[KBChunk]:
-        """Search KB chunks by embedding similarity."""
+        """Search KB chunks by embedding similarity.
+
+        Uses pure Python math instead of NumPy for compatibility with
+        Python runtimes where NumPy wheels (C extensions) may not be
+        available (e.g., local dev on newer Python versions).
+        """
         # Get all chunks with embeddings
         result = await self.session.execute(
             select(KBChunk)
@@ -303,26 +314,39 @@ class KBRepository:
             .where(KBChunk.embedding.is_not(None))
         )
         chunks = result.scalars().all()
-        
+
         if not chunks:
             return []
-        
-        # Calculate cosine similarity in Python
-        import numpy as np
-        
-        query_vec = np.array(query_embedding)
-        query_norm = np.linalg.norm(query_vec)
-        
+
+        # Calculate cosine similarity in pure Python to avoid NumPy dependency
+        def l2_norm(vec: list[float]) -> float:
+            return math.sqrt(sum(x * x for x in vec))
+
+        def cosine_similarity(a: list[float], b: list[float]) -> float:
+            # Guard against mismatched dimensions
+            length = min(len(a), len(b))
+            if length == 0:
+                return 0.0
+            dot = sum(a[i] * b[i] for i in range(length))
+            norm_a = l2_norm(a[:length])
+            norm_b = l2_norm(b[:length])
+            if norm_a == 0.0 or norm_b == 0.0:
+                return 0.0
+            return dot / (norm_a * norm_b)
+
+        query_vec = list(query_embedding)
+        query_norm = l2_norm(query_vec)
+
         similarities = []
         for chunk in chunks:
             if chunk.embedding:
-                chunk_vec = np.array(chunk.embedding)
-                chunk_norm = np.linalg.norm(chunk_vec)
-                
+                chunk_vec = list(chunk.embedding)
+                chunk_norm = l2_norm(chunk_vec)
+
                 if chunk_norm > 0 and query_norm > 0:
-                    similarity = np.dot(query_vec, chunk_vec) / (query_norm * chunk_norm)
+                    similarity = cosine_similarity(query_vec, chunk_vec)
                     similarities.append((chunk, similarity))
-        
+
         # Sort by similarity (descending) and return top_k
         similarities.sort(key=lambda x: x[1], reverse=True)
         return [chunk for chunk, _ in similarities[:top_k]]

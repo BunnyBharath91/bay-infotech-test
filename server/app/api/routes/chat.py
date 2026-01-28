@@ -4,7 +4,7 @@ Implements the mandatory execution order for processing chat requests.
 """
 
 import logging
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_db, get_llm, get_embeddings
@@ -31,13 +31,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.post("/chat", response_model=ChatResponse)
+@router.post("/chat")
 async def chat(
     request: ChatRequest,
     db: AsyncSession = Depends(get_db),
     llm: LLMProvider = Depends(get_llm),
     embeddings: EmbeddingService = Depends(get_embeddings)
-) -> ChatResponse:
+    ):
     """
     Process chat request with mandatory execution order:
     1. Validate request
@@ -105,21 +105,24 @@ async def chat(
             metadata={"trigger_type": guardrail_result.trigger_type}
         )
         
-        # Return blocked response
-        return ChatResponse(
-            answer=guardrail_result.reason,
-            kbReferences=[],
-            confidence=1.0,
-            tier="TIER_1",  # Blocked requests go to Tier 1 for review
-            severity=guardrail_result.severity,
-            needsEscalation=guardrail_result.severity in ["HIGH", "CRITICAL"],
-            guardrail=GuardrailResult(
-                blocked=True,
-                reason=guardrail_result.reason,
-                trigger_type=guardrail_result.trigger_type
-            ),
-            sessionId=request.sessionId
-        )
+        # Return blocked response as plain JSON to avoid any optional
+        # NumPy / C-extension dependencies in FastAPI's response_model
+        # handling on newer Python versions.
+        return {
+            "answer": guardrail_result.reason,
+            "kbReferences": [],
+            "confidence": 1.0,
+            "tier": "TIER_1",  # Blocked requests go to Tier 1 for review
+            "severity": guardrail_result.severity,
+            "needsEscalation": guardrail_result.severity in ["HIGH", "CRITICAL"],
+            "guardrail": {
+                "blocked": True,
+                "reason": guardrail_result.reason,
+                "trigger_type": guardrail_result.trigger_type,
+            },
+            "sessionId": request.sessionId,
+            "ticketId": None,
+        }
     
     # Step 4: Retrieve KB chunks
     kb_chunks = await retrieve_kb_chunks(
@@ -143,17 +146,18 @@ async def chat(
             session_id=request.sessionId
         )
         
-        # Return no-KB response
-        return ChatResponse(
-            answer="This issue is not covered in the knowledge base. A support engineer will assist you.",
-            kbReferences=[],
-            confidence=0.0,
-            tier="TIER_1",
-            severity="MEDIUM",
-            needsEscalation=True,
-            guardrail=GuardrailResult(blocked=False),
-            sessionId=request.sessionId
-        )
+        # Return no-KB response (plain JSON)
+        return {
+            "answer": "This issue is not covered in the knowledge base. A support engineer will assist you.",
+            "kbReferences": [],
+            "confidence": 0.0,
+            "tier": "TIER_1",
+            "severity": "MEDIUM",
+            "needsEscalation": True,
+            "guardrail": {"blocked": False, "reason": None, "trigger_type": None},
+            "sessionId": request.sessionId,
+            "ticketId": None,
+        }
     
     # Step 6: Compute tier, severity, escalation (rule-based)
     issue_type = detect_issue_type(request.message, kb_chunks)
@@ -282,28 +286,28 @@ async def chat(
         }
     )
     
-    # Step 9: Return structured response
+    # Step 9: Return structured response as plain JSON
     kb_references = [
-        KBReference(
-            id=chunk.kb_document_id,
-            title=chunk.document.title if chunk.document else chunk.kb_document_id,
-            version=chunk.document.version if chunk.document else None,
-            relevance_score=None  # Could add similarity scores
-        )
+        {
+            "id": chunk.kb_document_id,
+            "title": chunk.document.title if chunk.document else chunk.kb_document_id,
+            "version": chunk.document.version if chunk.document else None,
+            "relevance_score": None,  # Could add similarity scores
+        }
         for chunk in kb_chunks[:3]  # Top 3 references
     ]
-    
+
     # Calculate confidence based on KB coverage and chunk relevance
     confidence = 0.9 if len(kb_chunks) >= 3 else 0.7
-    
-    return ChatResponse(
-        answer=answer,
-        kbReferences=kb_references,
-        confidence=confidence,
-        tier=tier,
-        severity=severity,
-        needsEscalation=needs_escalation,
-        guardrail=GuardrailResult(blocked=False),
-        ticketId=ticket_id,
-        sessionId=request.sessionId
-    )
+
+    return {
+        "answer": answer,
+        "kbReferences": kb_references,
+        "confidence": confidence,
+        "tier": tier.value,
+        "severity": severity.value,
+        "needsEscalation": needs_escalation,
+        "guardrail": {"blocked": False, "reason": None, "trigger_type": None},
+        "ticketId": ticket_id,
+        "sessionId": request.sessionId,
+    }

@@ -64,13 +64,36 @@ async def test_db_session(test_db_engine) -> AsyncGenerator[AsyncSession, None]:
 async def test_client(test_db_session):
     """Create a test client with dependency overrides."""
     from httpx import AsyncClient, ASGITransport
+    from app.api.dependencies import get_llm, get_embeddings
+    from app.llm.provider import MockProvider
+    from app.rag.embeddings import EmbeddingService
+    import numpy as np
     
     async def override_get_db():
         yield test_db_session
     
-    app.dependency_overrides[get_db] = override_get_db
+    # Mock LLM provider
+    mock_llm = MockProvider()
     
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    # Mock embedding service
+    class MockEmbeddingService(EmbeddingService):
+        def __init__(self):
+            self.model = None
+        
+        def embed_text(self, text: str) -> list:
+            # Return a simple mock embedding
+            return [0.1] * 384
+        
+        def embed_batch(self, texts: list) -> list:
+            return [self.embed_text(text) for text in texts]
+    
+    mock_embeddings = MockEmbeddingService()
+    
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_llm] = lambda: mock_llm
+    app.dependency_overrides[get_embeddings] = lambda: mock_embeddings
+    
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test", timeout=30.0) as client:
         yield client
     
     app.dependency_overrides.clear()
