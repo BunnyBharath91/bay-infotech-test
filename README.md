@@ -1,6 +1,6 @@
 # AI Help Desk Platform - Full-Stack POC
 
-> **Next-Generation AI Help Desk for Complex Training Environments**
+> **Next-Gen AI Help Desk for Complex Training Environments**
 
 A production-ready, end-to-end AI Help Desk platform with RAG (Retrieval-Augmented Generation), strict guardrails, tier-based routing, and comprehensive analytics.
 
